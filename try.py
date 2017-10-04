@@ -62,6 +62,11 @@ def read_and_resize(filepath):
     return np.array(im, dtype="float32")
 
 
+def augment(im_array):
+    if np.random.uniform(0, 1) > 0.9:
+        im_array = np.fliplr(im_array)
+    return im_array
+
 def gen(triplet_gen):
     while True:
         list_positive_examples_1 = []
@@ -111,24 +116,23 @@ def triplet_loss(inputs, dist='sqeuclidean', margin='maxplus'):
         loss = K.log(1 + K.exp(loss))
     return K.mean(loss)
 
-def check_loss():
-    batch_size = 10
-    shape = (batch_size, 4096)
+def triplet_loss_np(inputs, dist='sqeuclidean', margin='maxplus'):
+    anchor, positive, negative = inputs
+    positive_distance = np.square(anchor - positive)
+    negative_distance = np.square(anchor - negative)
+    if dist == 'euclidean':
+        positive_distance = np.sqrt(np.sum(positive_distance, axis=-1, keepdims=True))
+        negative_distance = np.sqrt(np.sum(negative_distance, axis=-1, keepdims=True))
+    elif dist == 'sqeuclidean':
+        positive_distance = np.sum(positive_distance, axis=-1, keepdims=True)
+        negative_distance = np.sum(negative_distance, axis=-1, keepdims=True)
+    loss = positive_distance - negative_distance
+    if margin == 'maxplus':
+        loss = np.maximum(0.0, 1 + loss)
+    elif margin == 'softplus':
+        loss = np.log(1 + np.exp(loss))
+    return np.mean(loss)
 
-    p1 = normalize(np.random.random(shape))
-    n = normalize(np.random.random(shape))
-    p2 = normalize(np.random.random(shape))
-    
-    input_tensor = [K.variable(p1), K.variable(n), K.variable(p2)]
-    out1 = K.eval(triplet_loss(input_tensor))
-    input_np = [p1, n, p2]
-    out2 = triplet_loss_np(input_np)
-
-    assert out1.shape == out2.shape
-    print(np.linalg.norm(out1))
-    print(np.linalg.norm(out2))
-    print(np.linalg.norm(out1-out2))
-    
 def GetModel():
     base_model = ResNet50(weights='imagenet', include_top=False, pooling='max')
     for layer in base_model.layers:
@@ -167,12 +171,7 @@ checkpoint = ModelCheckpoint(path_model, monitor='loss', verbose=1, save_best_on
 early = EarlyStopping(monitor="val_loss", mode="min", patience=2)
 callbacks_list = [checkpoint, early]  # early
 
-def ShowImg(img):
-    plt.figure()
-    plt.imshow(img.astype('uint8'))
-    plt.show()
-    plt.close()
-    
+ 
 batch = next(gen_tr)
 
 img = batch[0]['anchor_input'][0]
